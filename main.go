@@ -122,10 +122,41 @@ func (r *Repository) GetBookByID(context *fiber.Ctx) error {
 	return nil
 }
 
+func (r *Repository) UpdateBooks(context *fiber.Ctx) error{
+	id := context.Params("id")
+	if id == "" {
+		context.Status(http.StatusBadRequest).JSON(&fiber.Map{
+			"message": "id is required",
+		})
+		return nil
+	}
+
+	books := models.Books{}
+	if err := context.BodyParser(&books); err != nil {
+		return context.Status(400).JSON(&fiber.Map{
+			"message": "unable to parse JSON",
+		})
+	}
+
+	err := r.Db.Model(&books).Where("id = ?", id).Updates(books).Error
+	if err != nil {
+		context.Status(http.StatusBadRequest).JSON(&fiber.Map{
+			"message": "unable to update book",
+		})
+		return err
+	}
+
+	context.Status(http.StatusOK).JSON(&fiber.Map{
+		"message": "book updated successfully",
+	})
+	return nil
+}
+
 func (r *Repository) SetupRoutes(app *fiber.App) {
 	api := app.Group("/api")
 	// all these createbooks, etc are functions used here as methods
 	api.Post("/books", r.CreateBooks)
+	api.Put("/books/:id", r.UpdateBooks)
 	api.Get("/books", r.GetBooks)
 	api.Get("/books/:id", r.GetBookByID)
 	api.Delete("/books/:id", r.DeleteBook)
