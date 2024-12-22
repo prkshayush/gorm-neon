@@ -28,6 +28,7 @@ type Repository struct {
 
 // gorm gives us the ability to interact with the database and DB is the connection to the database that we will use to interact with the database while Db is a pointer to the connection to the database
 
+// book functions
 func (r *Repository) CreateBooks(context *fiber.Ctx) error {
 	book := Book{}
 
@@ -153,14 +154,87 @@ func (r *Repository) UpdateBooks(context *fiber.Ctx) error{
 	return nil
 }
 
+// user functions
+func(r *Repository) CreateUser(c *fiber.Ctx) error{
+	user := models.Users{}
+
+	if err := c.BodyParser(&user); err != nil{
+		return c.Status(http.StatusBadRequest).JSON(&fiber.Map{
+			"message": "unable to parse JSON",
+		})
+	}
+
+	err := r.Db.Create(&user).Error
+	if err != nil{
+		c.Status(http.StatusBadRequest).JSON(&fiber.Map{
+			"message": "user can't be created",
+		})
+	}
+
+	c.Status(http.StatusOK).JSON(&fiber.Map{
+		"message": "user created successfully",
+		"data": user,
+	})
+
+	return nil
+}
+
+func (r *Repository) GetUsers(c *fiber.Ctx) error{
+	users := &[]models.Users{}
+
+	err := r.Db.Preload("Book").Find(&users).Error
+	if err != nil{
+		c.Status(http.StatusBadRequest).JSON(&fiber.Map{
+			"message": "can't fetch all the users",
+		})
+	}
+
+	c.Status(http.StatusOK).JSON(&fiber.Map{
+		"message": "users fetched successfully",
+		"data": users,
+	})
+	return nil
+}
+
+func (r *Repository) GetUserByID(c *fiber.Ctx) error{
+	users := &models.Users{}
+
+	id := c.Params("id")
+	if id == "" {
+		c.Status(http.StatusBadRequest).JSON(&fiber.Map{
+			"message": "id is required",
+		})
+	}
+
+	err := r.Db.Preload("Book").Where("id = ?", id).First(users).Error
+	if err != nil{
+		c.Status(http.StatusBadRequest).JSON(&fiber.Map{
+			"message": "can't fetch the user",
+		})
+	}
+
+	c.Status(http.StatusOK).JSON(&fiber.Map{
+		"message": "user fetched successfully",
+		"data": users,
+	})
+	return nil
+}
+
 func (r *Repository) SetupRoutes(app *fiber.App) {
 	api := app.Group("/api")
+
+	// book routes
 	// all these createbooks, etc are functions used here as methods
 	api.Post("/books", r.CreateBooks)
 	api.Put("/books/:id", r.UpdateBooks)
 	api.Get("/books", r.GetBooks)
 	api.Get("/books/:id", r.GetBookByID)
 	api.Delete("/books/:id", r.DeleteBook)
+
+	// user routes
+	api.Post("/users", r.CreateUser)
+	api.Get("/users", r.GetUsers)
+	api.Get("/users/:id", r.GetUserByID)
 }
 
 func main() {
@@ -175,11 +249,21 @@ func main() {
 		log.Fatal("DATABASE_URL is not set in the environment")
 	}
 
+	clientURL := os.Getenv("CLIENT_URL")
+	if clientURL == "" {
+		log.Fatal("CLIENT_URL is not set in the environment")
+	}
+
 	db, err := storage.NewConnection(dbURL)
 	if err != nil {
 		log.Fatal("Error connecting to the database", err)
 	}
 	err = models.MigrateBooks(db)
+	if err != nil {
+		log.Fatal("Error migrating the database", err)
+	}
+
+	err = models.MigrateUsers(db)
 	if err != nil {
 		log.Fatal("Error migrating the database", err)
 	}
@@ -191,7 +275,7 @@ func main() {
 	app := fiber.New()
 
 	app.Use(cors.New(cors.Config{
-		AllowOrigins: "http://localhost:3000",
+		AllowOrigins: clientURL,
 		AllowHeaders: "Origin, Content-Type, Accept",
 	}))
 
